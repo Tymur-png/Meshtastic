@@ -349,6 +349,40 @@ void InputBroker::Init()
     DownButtonThread->initButton(downConfig);
 #endif
 
+#if defined(STANDALONE_UI) && defined(STANDALONE_BTN_UP)
+    // Standalone (phone-free) UI: six navigation buttons.
+    // UP/DOWN/LEFT/RIGHT/OK navigate and confirm, CHAT toggles chat <-> keyboard.
+    {
+        struct StandaloneBtnDef {
+            uint8_t pin;
+            const char *name;
+            input_broker_event press;
+            input_broker_event longPress;
+        };
+        static const StandaloneBtnDef btns[] = {
+            {STANDALONE_BTN_UP, "BtnUp", INPUT_BROKER_UP, INPUT_BROKER_UP_LONG},
+            {STANDALONE_BTN_DOWN, "BtnDown", INPUT_BROKER_DOWN, INPUT_BROKER_DOWN_LONG},
+            {STANDALONE_BTN_LEFT, "BtnLeft", INPUT_BROKER_LEFT, INPUT_BROKER_BACK},
+            {STANDALONE_BTN_RIGHT, "BtnRight", INPUT_BROKER_RIGHT, INPUT_BROKER_NONE},
+            {STANDALONE_BTN_OK, "BtnOk", INPUT_BROKER_SELECT, INPUT_BROKER_SELECT_LONG},
+            {STANDALONE_BTN_CHAT, "BtnChat", INPUT_BROKER_CHAT_TOGGLE, INPUT_BROKER_NONE},
+        };
+        for (const auto &def : btns) {
+            ButtonThread *thread = new ButtonThread(def.name);
+            ButtonConfig cfg;
+            cfg.pinNumber = def.pin;
+            cfg.activeLow = true;
+            cfg.activePullup = true;
+            cfg.pullupSense = pullup_sense;
+            cfg.intRoutine = nullptr; // polled mode: no per-pin ISR trampoline needed
+            cfg.singlePress = def.press;
+            cfg.longPress = def.longPress;
+            cfg.longPressTime = 500;
+            thread->initButton(cfg);
+        }
+    }
+#endif
+
 #if defined(BUTTON_PIN)
 #if defined(USERPREFS_BUTTON_PIN)
     int _pinNum = config.device.button_gpio ? config.device.button_gpio : USERPREFS_BUTTON_PIN;

@@ -22,6 +22,7 @@ enum input_broker_event {
     INPUT_BROKER_RIGHT = 20,
     INPUT_BROKER_CANCEL = 24,
     INPUT_BROKER_BACK = 27,
+    INPUT_BROKER_CHAT_TOGGLE = 28, // standalone UI: toggle chat <-> on-screen keyboard
     INPUT_BROKER_USER_PRESS,
     INPUT_BROKER_ALT_PRESS,
     INPUT_BROKER_ALT_LONG,
