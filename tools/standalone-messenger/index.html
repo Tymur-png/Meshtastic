@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meshtastic Standalone — симулятор автономного LoRa-мессенджера</title>
+<style>
+  :root{
+    --green:#58ff9b; --green-dim:#2e7a4d;
+    --amber:#ffc857; --red:#ff6b6b; --ink:#c8ffd9; --muted:#5d8a6c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:radial-gradient(1200px 700px at 50% 20%, #12241a 0%, #050806 60%, #020403 100%);
+    color:var(--ink); font-family:ui-monospace,'Cascadia Mono','JetBrains Mono',Menlo,Consolas,monospace;
+    display:flex; align-items:flex-start; justify-content:center; gap:28px; padding:24px; flex-wrap:wrap;
+  }
+  .device{
+    background:linear-gradient(160deg,#1c2420,#0d120e);
+    border:1px solid #2b3a30; border-radius:26px; padding:22px 20px 18px;
+    box-shadow:0 24px 60px rgba(0,0,0,.65), inset 0 1px 0 #33453a;
+    width:680px;
+  }
+  .brand{display:flex;justify-content:space-between;align-items:center;margin:0 2px 12px;color:var(--muted);font-size:12px;letter-spacing:.2em;}
+  .brand b{color:var(--green);letter-spacing:.25em;}
+  .screen{
+    width:640px; height:480px;
+    background:#030604; border-radius:10px; border:1px solid #1d2b22;
+    position:relative; overflow:hidden;
+    box-shadow:inset 0 0 42px rgba(0,0,0,.9);
+    font-size:15px; line-height:1.32;
+    text-shadow:0 0 6px rgba(88,255,155,.35);
+  }
+  .screen::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
+    mix-blend-mode:multiply;
+  }
+  .screen.off > *{visibility:hidden;}
+  .screen.off{background:#010201;}
+  .px{position:absolute;left:0;top:0;width:100%;height:100%;padding:10px 14px;}
+  .hdr{border-bottom:1px solid var(--green-dim);padding-bottom:4px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+  .hdr .t{color:var(--green);font-weight:700;letter-spacing:.06em;}
+  .statusbar{border-top:1px solid var(--green-dim);padding-top:4px;margin-top:8px;display:flex;justify-content:space-between;color:var(--muted);font-size:14px;}
+  .menu-item{white-space:pre;padding:2px 4px;font-size:17px;}
+  .menu-item.sel{color:#041007;background:var(--green);text-shadow:none;font-weight:700;}
+  .center{text-align:center;}
+  .dim{color:var(--muted);} .amb{color:var(--amber);} .red{color:var(--red);} .grn{color:var(--green);}
+  .bub{max-width:88%;margin:3px 0;padding:3px 8px;border:1px solid var(--green-dim);border-radius:9px;word-break:break-word;white-space:pre-wrap;}
+  .bub .who{font-size:12px;color:var(--muted);}
+  .bub.them{align-self:flex-start;border-left:3px solid var(--green);}
+  .bub.me{align-self:flex-end;border-right:3px solid var(--amber);}
+  .chatlog{display:flex;flex-direction:column;overflow:hidden;}
+  .kbd{position:absolute;left:0;bottom:0;width:100%;background:#071009f2;border-top:1px solid var(--green-dim);padding:8px 12px 10px;z-index:4;}
+  .kbd .typed{border:1px solid var(--green-dim);padding:3px 8px;margin-bottom:6px;min-height:26px;white-space:nowrap;overflow:hidden;}
+  .kbd .row{display:flex;justify-content:center;gap:3px;margin:3px 0;}
+  .kbd .key{border:1px solid #234534;border-radius:4px;min-width:32px;height:30px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-size:16px;}
+  .kbd .key.sel{background:var(--green);color:#041007;font-weight:700;text-shadow:none;}
+  .kbd .key.wide{min-width:110px;font-size:12px;letter-spacing:.04em;}
+  .popup{position:absolute;inset:0;background:rgba(2,8,4,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:5;text-align:center;padding:14px;}
+  .popup .box{border:1px solid var(--amber);border-radius:10px;padding:14px 18px;max-width:92%;}
+  .okbtn{border:1px solid var(--green);border-radius:6px;padding:3px 18px;color:var(--green);display:inline-block;margin-top:10px;}
+  .bar{height:12px;border:1px solid var(--green-dim);border-radius:6px;overflow:hidden;width:80%;margin:8px auto;}
+  .bar i{display:block;height:100%;background:var(--green);}
+  .slider{display:flex;gap:3px;align-items:center;justify-content:center;margin:4px 0;}
+  .slider i{width:16px;height:8px;background:#123321;} .slider i.on{background:var(--green);}
+  .pad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(2,44px);gap:8px;justify-content:center;margin-top:16px;}
+  .hbtn{
+    background:linear-gradient(180deg,#243329,#131b15); color:var(--ink);
+    border:1px solid #33473a; border-radius:10px; font:inherit; font-size:16px; cursor:pointer;
+    box-shadow:0 3px 0 #060a07; user-select:none;
+  }
+  .hbtn:active{transform:translateY(2px);box-shadow:0 1px 0 #060a07;background:#1a241d;}
+  .hbtn.chat{grid-column:1/4;font-size:12px;letter-spacing:.25em;color:var(--amber);}
+  .side{max-width:340px;font-size:13px;line-height:1.55;color:#a9cdb4;}
+  .side h2{color:var(--green);font-size:15px;letter-spacing:.15em;margin-bottom:10px;}
+  .side h3{color:var(--amber);font-size:13px;margin:14px 0 4px;}
+  .side kbd{border:1px solid #33473a;border-bottom-width:2px;border-radius:5px;padding:0 6px;background:#10160f;color:var(--ink);font-size:12px;}
+  .side .demo{margin-top:14px;display:flex;flex-direction:column;gap:6px;}
+  .side .demo button{background:#10160f;color:var(--amber);border:1px dashed #4a5f3a;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer;text-align:left;}
+  .side .demo button:hover{background:#152015;}
+  .side ul{padding-left:18px;} .side li{margin:3px 0;}
+  .blink{animation:bl 1s steps(2) infinite;} @keyframes bl{50%{opacity:0;}}
+</style>
+</head>
+<body>
+  <div class="device">
+    <div class="brand"><b>MESHTASTIC</b><span>DX-LR30 · EU868</span></div>
+    <div class="screen" id="screen"><div class="px" id="px"></div></div>
+    <div class="pad">
+      <span></span><button class="hbtn" data-k="up">↑</button><span></span>
+      <button class="hbtn" data-k="left">←</button><button class="hbtn" data-k="ok">OK</button><button class="hbtn" data-k="right">→</button>
+      <span></span><button class="hbtn" data-k="down">↓</button><span></span>
+      <button class="hbtn chat" data-k="chat">CHAT</button>
+    </div>
+  </div>
+
+  <div class="side">
+    <h2>АВТОНОМНЫЙ MESHTASTIC-МЕССЕНДЖЕР</h2>
+    <div>Симулятор интерфейса прошивки: ESP32-S3 + DX-LR30 (SX1262) + TFT 320×240 + 6 кнопок. Телефон, Bluetooth и интернет не нужны — только LoRa mesh.</div>
+    <h3>Управление (клавиатура тоже работает)</h3>
+    <ul>
+      <li><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> — навигация / курсор клавиатуры</li>
+      <li><kbd>Enter</kbd> — OK (выбрать/подтвердить)</li>
+      <li><kbd>Esc</kbd> — назад (долгое OK)</li>
+      <li><kbd>C</kbd> или <kbd>Tab</kbd> — CHAT: чат ↔ клавиатура</li>
+      <li>В клавиатуре можно печатать физической клавиатурой</li>
+    </ul>
+    <h3>Демо-события</h3>
+    <div class="demo">
+      <button id="demoMsg">📩 Имитировать входящее сообщение</button>
+      <button id="demoCharge">🔌 Подключить/отключить зарядку (TP4056)</button>
+      <button id="demoDrain">🪫 Разрядить батарею до 10%</button>
+      <button id="demoNode">📡 Поймать/потерять узел в сети</button>
+    </div>
+    <h3>Что внутри</h3>
+    <div>LoRa SX1262 · пакеты Meshtastic · mesh-маршрутизация · AES-PSK каналы · PKI для личных сообщений · ACK · телеметрия. Симулятор воспроизводит UI-слой прошивки 1:1.</div>
+  </div>
+
+<script>
+"use strict";
+/* ================= СОСТОЯНИЕ УСТРОЙСТВА ================= */
+const ME = { name:"Tymur", hex:"!9c4e21f7" };
+const regions = ["EU_868","EU_433","RU","US"];
+const S = { sound:true, lang:"ru", brightness:100, autolock:0, regionIdx:0, channel:0 };
+const channels = ["Primary","Дальнобойный","Полевой"];
+const autolockOpts = [0,30,60,300]; // сек, 0=выкл
+
+let nodes = [
+  {hex:"!a1b2c3d4", name:"Друг",        role:"client", rssi:-72, snr:8.5, hops:0, heard:120},
+  {hex:"!5e6f7081", name:"Тимур",       role:"client", rssi:-85, snr:6.1, hops:1, heard:300},
+  {hex:"!9f8e7d6c", name:"Node-ABC",    role:"client", rssi:-95, snr:2.0, hops:2, heard:900},
+  {hex:"!0badf00d", name:"Repeater-01", role:"router", rssi:-81, snr:5.2, hops:1, heard:12},
+];
+let extraNode = {hex:"!11223344", name:"Охотник", role:"client", rssi:-99, snr:1.1, hops:3, heard:5};
+
+let msgs = [ // peer: hex узла или "broadcast"
+  {peer:"!a1b2c3d4", out:false, text:"Привет! Ты дома?", t:Date.now()-600000},
+  {peer:"!a1b2c3d4", out:true,  text:"Да, я дома", t:Date.now()-540000},
+  {peer:"!a1b2c3d4", out:false, text:"Отлично!", t:Date.now()-480000},
+  {peer:"broadcast", out:false, from:"!9f8e7d6c", text:"Всем привет, сеть работает?", t:Date.now()-3600000},
+];
+let unread = {}; // peer -> count
+let battery = 78, charging = false;
+
+/* ================= ЭКРАННАЯ КЛАВИАТУРА ================= */
+const KB_ROWS = [
+  "АБВГДЕЖЗИЙК".split(""),
+  "ЛМНОПРСТУФХ".split(""),
+  "ЦЧШЩЪЫЬЭЮЯ".split(""),
+  ["SPACE","BKSP","SEND"],
+];
+
+/* ================= СТРОКИ ================= */
+const T = {
+  ru:{
+    menu:["Сообщения","Контакты","Сеть","Настройки","О устройстве"],
+    messages:"СООБЩЕНИЯ", chat:"← Чат: ", broadcast:"Общий канал", typeMsg:"[Введите сообщение...]",
+    newMsg:"НОВОЕ СООБЩЕНИЕ", contacts:"КОНТАКТЫ", network:"СЕТЬ", settings:"НАСТРОЙКИ", about:"О УСТРОЙСТВЕ",
+    nodes:"Узлов:", routers:"Ретрансляторов:", region:"Регион:", chan:"Канал:", repeater:"РЕТРАНСЛЯТОР",
+    lastPacket:"Последний пакет:", lastContact:"Последний контакт:", agoMin:"мин назад", agoSec:"сек назад", agoHr:"ч назад",
+    setName:"Имя устройства", sChan:"Канал", sRegion:"Регион", sSound:"Звук", sLang:"Язык", sBright:"Яркость экрана",
+    sLock:"Автоблокировка", sInfo:"Информация", on:"Вкл", off:"Выкл", lockOff:"Выкл", sec:"сек", min:"мин",
+    space:"ПРОБЕЛ", send:"✓ ОТПРАВИТЬ", lowBat:"⚠ НИЗКИЙ ЗАРЯД", lowBatLeft:"Осталось примерно",
+    chargingHdr:"ЗАРЯДКА", inVolt:"Входное напряжение:", bootSteps:["Инициализация LoRa","Инициализация TFT","Инициализация кнопок","Инициализация сети","Готово"],
+    loading:"Загрузка...", you:"Я", name:"Имя:", hops:"Hops:", saved:"Сохранено!",
+    aboutLines:["Автономный LoRa-мессенджер","Прошивка: Meshtastic + StandaloneUI","Радио: SX1262 (DX-LR30) · EU_868","MCU: ESP32-S3 · Экран: TFT 320×240","Шифрование: AES-PSK / PKI X25519","Телефон не нужен · Интернет не нужен"],
+    noMsgs:"Сообщений нет.", noNodes:"Узлов не видно.", sending:"Отправка...", empty:"— пусто —",
+  },
+  en:{
+    menu:["Messages","Contacts","Network","Settings","About"],
+    messages:"MESSAGES", chat:"← Chat: ", broadcast:"Broadcast", typeMsg:"[Type a message...]",
+    newMsg:"NEW MESSAGE", contacts:"CONTACTS", network:"NETWORK", settings:"SETTINGS", about:"ABOUT",
+    nodes:"Nodes:", routers:"Routers:", region:"Region:", chan:"Channel:", repeater:"REPEATER",
+    lastPacket:"Last packet:", lastContact:"Last contact:", agoMin:"min ago", agoSec:"sec ago", agoHr:"h ago",
+    setName:"Device name", sChan:"Channel", sRegion:"Region", sSound:"Sound", sLang:"Language", sBright:"Brightness",
+    sLock:"Auto-lock", sInfo:"Info", on:"On", off:"Off", lockOff:"Off", sec:"s", min:"min",
+    space:"SPACE", send:"✓ SEND", lowBat:"⚠ LOW BATTERY", lowBatLeft:"About",
+    chargingHdr:"CHARGING", inVolt:"Input voltage:", bootSteps:["LoRa init","TFT init","Buttons init","Network init","Ready"],
+    loading:"Loading...", you:"Me", name:"Name:", hops:"Hops:", saved:"Saved!",
+    aboutLines:["Standalone LoRa messenger","Firmware: Meshtastic + StandaloneUI","Radio: SX1262 (DX-LR30) · EU_868","MCU: ESP32-S3 · Screen: TFT 320×240","Crypto: AES-PSK / PKI X25519","No phone · No internet"],
+    noMsgs:"No messages.", noNodes:"No nodes heard.", sending:"Sending...", empty:"— empty —",
+  }
+};
+const t = k => T[S.lang][k];
+
+/* ================= СОСТОЯНИЕ UI ================= */
+const st = {
+  screen:"boot", bootStep:0, menuIdx:0, listIdx:0,
+  chatPeer:null, chatScroll:0, kbdOpen:false, kbd:{r:0,c:0,buf:""},
+  popup:null, locked:false, lastInput:Date.now(), toast:null, toastUntil:0,
+  nameEdit:null, bootStart:Date.now(),
+};
+
+/* ================= ЗВУК ================= */
+let AC=null;
+function tone(f,ms,when=0,vol=.12){
+  if(!S.sound) return;
+  try{ AC = AC || new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+  if(!AC) return;
+  const o=AC.createOscillator(), g=AC.createGain();
+  o.type="square"; o.frequency.value=f;
+  g.gain.setValueAtTime(vol, AC.currentTime+when);
+  g.gain.exponentialRampToValueAtTime(.001, AC.currentTime+when+ms/1000);
+  o.connect(g); g.connect(AC.destination);
+  o.start(AC.currentTime+when); o.stop(AC.currentTime+when+ms/1000);
+}
+const sndClick =()=>tone(2200,15);
+const sndMsg   =()=>tone(1470,160);          // короткий писк — новое сообщение
+const sndSent  =()=>{tone(1568,110);tone(2093,110,.14);}; // два писка — отправлено
+const sndError =()=>tone(220,650);           // длинный — ошибка
+const sndBoot  =()=>{tone(880,120);tone(1175,120,.15);};
+
+/* ================= УТИЛИТЫ ================= */
+const $=s=>document.querySelector(s);
+const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+function ago(tsMs){ const s=Math.floor((Date.now()-tsMs)/1000);
+  if(s<60) return s+" "+t("agoSec"); if(s<3600) return Math.floor(s/60)+" "+t("agoMin");
+  return Math.floor(s/3600)+" "+t("agoHr"); }
+function agoSec(sec){ if(sec<60) return sec+" "+t("agoSec"); if(sec<3600) return Math.floor(sec/60)+" "+t("agoMin"); return Math.floor(sec/3600)+" "+t("agoHr"); }
+const nodeByHex=h=>nodes.find(n=>n.hex===h);
+const peerName=p=> p==="broadcast" ? t("broadcast") : (nodeByHex(p)||{name:p}).name;
+function statusbar(){
+  const bat = charging ? "CHG" : "BAT";
+  return `<div class="statusbar"><span>${bat} ${battery}%</span><span>NET ${nodes.length} · ${regions[S.regionIdx]}</span></div>`;
+}
+/* ================= РЕНДЕР ЭКРАНОВ ================= */
+function drawBoot(){
+  const steps=t("bootSteps"), pct=Math.min(100,(st.bootStep+1)/steps.length*100);
+  return `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px">
+    <div style="font-size:26px;letter-spacing:.3em" class="grn"><b>MESHTASTIC</b></div>
+    <div class="dim">${t("loading")}</div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="dim">${steps[st.bootStep]||""}…</div>
+  </div>`;
+}
+function drawMenu(){
+  return `<div class="hdr"><span class="t">MESHTASTIC</span></div>`
+    + t("menu").map((m,i)=>`<div class="menu-item ${i===st.menuIdx?'sel':''}">${i===st.menuIdx?'>':'&nbsp;'} ${m}</div>`).join("")
+    + statusbar();
+}
+function convos(){ // broadcast + узлы, у которых есть история или которые в сети
+  const list=[{peer:"broadcast"}];
+  nodes.forEach(n=>list.push({peer:n.hex}));
+  Object.keys(unread).forEach(p=>{ if(!list.find(c=>c.peer===p)) list.push({peer:p}); });
+  return list;
+}
+function drawChatList(){
+  const list=convos();
+  let h=`<div class="hdr"><span class="t">← ${t("messages")}</span></div>`;
+  list.forEach((c,i)=>{
+    const last=[...msgs].reverse().find(m=>m.peer===c.peer);
+    const un=unread[c.peer]?` <span class="amb">(${unread[c.peer]})</span>`:"";
+    h+=`<div class="menu-item ${i===st.listIdx?'sel':''}">${i===st.listIdx?'>':'&nbsp;'} ${esc(peerName(c.peer))}${un}</div>`;
+    h+=`<div class="dim" style="font-size:12px;padding-left:16px">${last?esc(last.text.slice(0,34))+(last.text.length>34?"…":""):t("empty")}</div>`;
+  });
+  return h+statusbar();
+}
+function drawChat(){
+  const peer=st.chatPeer;
+  const log=msgs.filter(m=>m.peer===peer);
+  const vis=st.kbdOpen?5:9;
+  let h=`<div class="hdr"><span class="t">${t("chat")}${esc(peerName(peer))}</span><span class="dim">${log.length?st.chatScroll+1+"/"+log.length:""}</span></div>`;
+  if(!log.length){ h+=`<div class="dim center" style="margin-top:30px">${t("noMsgs")}</div>`; }
+  else{
+    const end=Math.max(0,log.length-st.chatScroll), start=Math.max(0,end-vis);
+    h+=`<div class="chatlog" style="height:${st.kbdOpen?120:330}px">`;
+    log.slice(start,end).forEach(m=>{
+      const who=m.out?t("you"):(m.from?peerName(m.from):peerName(peer));
+      h+=`<div class="bub ${m.out?'me':'them'}"><div class="who">${esc(who)}</div>${esc(m.text)}</div>`;
+    });
+    h+=`</div>`;
+    if(st.chatScroll>0) h+=`<div class="dim center" style="font-size:11px">↓ ↓ ↓</div>`;
+  }
+  if(!st.kbdOpen) h+=`<div class="dim" style="border:1px dashed var(--green-dim);padding:3px 8px;margin-top:6px">${t("typeMsg")} <span class="amb">[CHAT]</span></div>`;
+  return h+(st.kbdOpen?"":statusbar());
+}
+function drawKbd(){
+  const k=KB_ROWS;
+  let h=`<div class="kbd"><div class="typed">${esc(st.kbd.buf)}<span class="blink">_</span></div>`;
+  k.forEach((row,r)=>{
+    h+=`<div class="row">`;
+    row.forEach((key,c)=>{
+      const label=key==="SPACE"?t("space"):key==="BKSP"?"⌫":key==="SEND"?t("send"):key;
+      const wide=key.length>1?"wide":"";
+      h+=`<div class="key ${wide} ${r===st.kbd.r&&c===st.kbd.c?'sel':''}">${label}</div>`;
+    });
+    h+=`</div>`;
+  });
+  return h+`</div>`;
+}
+function drawContacts(){
+  let h=`<div class="hdr"><span class="t">← ${t("contacts")}</span></div>`;
+  if(!nodes.length) h+=`<div class="dim center" style="margin-top:30px">${t("noNodes")}</div>`;
+  nodes.forEach((n,i)=>{
+    const tag=n.role==="router"?' <span class="amb">[R]</span>':"";
+    h+=`<div class="menu-item ${i===st.listIdx?'sel':''}">${i===st.listIdx?'>':'&nbsp;'} ${esc(n.name)}${tag}</div>`;
+  });
+  return h+statusbar();
+}
+function drawContact(){
+  const n=nodes[st.listIdx]; if(!n) return drawContacts();
+  return `<div class="hdr"><span class="t">← ${esc(n.name)}</span></div>
+    <div style="padding:6px 4px;line-height:1.9">
+      <div>${t("name")} ${esc(n.name)}</div>
+      <div>ID: <span class="grn">${n.hex}</span></div>
+      <div>RSSI: <span class="amb">${n.rssi} dBm</span></div>
+      <div>SNR: <span class="amb">${n.snr.toFixed(1)} dB</span></div>
+      <div>${t("hops")} ${n.hops}</div>
+      <div class="dim">${t("lastContact")}<br>${agoSec(n.heard)}</div>
+      <div class="dim">Role: ${n.role==="router"?"ROUTER":"CLIENT"}</div>
+    </div>`+statusbar();
+}
+function drawNetwork(){
+  const routers=nodes.filter(n=>n.role==="router");
+  const best=[...nodes].sort((a,b)=>b.rssi-a.rssi)[0];
+  return `<div class="hdr"><span class="t">← ${t("network")}</span></div>
+    <div style="padding:6px 4px;line-height:2">
+      <div>${t("nodes")} <span class="grn" style="float:right">${nodes.length}</span></div>
+      <div>${t("routers")} <span class="grn" style="float:right">${routers.length}</span></div>
+      <div>RSSI: <span class="amb" style="float:right">${best?best.rssi:"—"} dBm</span></div>
+      <div>SNR: <span class="amb" style="float:right">${best?best.snr.toFixed(0):"—"} dB</span></div>
+      <div>${t("region")} <span class="grn" style="float:right">${regions[S.regionIdx]}</span></div>
+      <div>${t("chan")} <span class="grn" style="float:right">${esc(channels[S.channel])}</span></div>
+    </div>
+    <div class="dim center">${routers.length?"OK → "+t("repeater").toLowerCase():""}</div>`+statusbar();
+}
+function drawRepeater(){
+  const r=nodes.filter(n=>n.role==="router")[0];
+  if(!r) return drawNetwork();
+  return `<div class="hdr"><span class="t">← ${t("repeater")}</span></div>
+    <div style="padding:6px 4px;line-height:2">
+      <div>${t("name")} ${esc(r.name)}</div>
+      <div>RSSI: <span class="amb" style="float:right">${r.rssi} dBm</span></div>
+      <div>SNR: <span class="amb" style="float:right">${r.snr.toFixed(1)} dB</span></div>
+      <div>${t("hops")} <span class="grn" style="float:right">${r.hops}</span></div>
+      <div class="dim">${t("lastPacket")}<br>${agoSec(r.heard)}</div>
+      <div class="dim" style="font-size:12px;margin-top:8px">${S.lang==="ru"?"Дальность по RSSI/SNR только оценочная — реальное расстояние устройство не измеряет.":"Range from RSSI/SNR is an estimate only."}</div>
+    </div>`+statusbar();
+}
+function settingsItems(){
+  return [
+    {label:t("setName"), val:ME.name},
+    {label:t("sChan"), val:channels[S.channel]},
+    {label:t("sRegion"), val:regions[S.regionIdx]},
+    {label:t("sSound"), val:S.sound?t("on"):t("off")},
+    {label:t("sLang"), val:S.lang==="ru"?"Русский":"English"},
+    {label:t("sBright"), val:S.brightness+"%"},
+    {label:t("sLock"), val:S.autolock===0?t("lockOff"):(S.autolock>=60?(S.autolock/60)+" "+t("min"):S.autolock+" "+t("sec"))},
+    {label:t("sInfo"), val:""},
+  ];
+}
+function drawSettings(){
+  const items=settingsItems();
+  let h=`<div class="hdr"><span class="t">← ${t("settings")}</span></div>`;
+  items.forEach((it,i)=>{
+    h+=`<div class="menu-item ${i===st.listIdx?'sel':''}">${i===st.listIdx?'>':'&nbsp;'} ${it.label}${it.val?' <span class="'+(i===st.listIdx?'':'dim')+'">· '+esc(it.val)+'</span>':''}</div>`;
+  });
+  if(st.listIdx===5){ // яркость — ползунок
+    h+=`<div class="slider">${Array.from({length:10},(_,i)=>`<i class="${i<Math.round(S.brightness/10)?'on':''}"></i>`).join("")}</div>`;
+  }
+  return h+statusbar();
+}
+function drawSetName(){
+  return `<div class="hdr"><span class="t">← ${t("setName")}</span></div>
+    <div style="padding:4px 2px"><div class="dim">${S.lang==="ru"?"Название устройства:":"Device name:"}</div></div>`+drawKbd()+statusbar();
+}
+function drawAbout(){
+  return `<div class="hdr"><span class="t">← ${t("about")}</span></div>
+    <div style="padding:6px 4px;line-height:1.9">
+      <div class="grn"><b>${esc(ME.name)}</b> <span class="dim">${ME.hex}</span></div>
+      ${t("aboutLines").map(l=>`<div class="dim" style="font-size:13px">${esc(l)}</div>`).join("")}
+      <div style="margin-top:8px">${t("chan")} ${esc(channels[S.channel])} · ${regions[S.regionIdx]}</div>
+    </div>`+statusbar();
+}
+function drawCharging(){
+  const pct=battery;
+  return `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px">
+    <div style="font-size:20px" class="grn">${t("chargingHdr")}</div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div>${pct}%</div>
+    <div class="dim">${t("inVolt")} ${(4.0+Math.random()*.25).toFixed(2)} V</div>
+  </div>`;
+}
+function drawPopup(){
+  const p=st.popup; if(!p) return "";
+  if(p.type==="msg") return `<div class="popup"><div class="box">
+      <div class="amb" style="letter-spacing:.2em">${t("newMsg")}</div>
+      <div class="grn" style="margin:8px 0 2px">${esc(p.name)}</div>
+      <div>${esc(p.text)}</div>
+      <div class="okbtn">[ OK ]</div></div></div>`;
+  if(p.type==="lowbat") return `<div class="popup"><div class="box">
+      <div class="red" style="font-size:18px">${t("lowBat")}</div>
+      <div style="margin-top:8px">${t("lowBatLeft")} ${battery}%</div>
+      <div class="okbtn">[ OK ]</div></div></div>`;
+  return "";
+}
+function drawToast(){
+  if(!st.toast||Date.now()>st.toastUntil) return "";
+  return `<div class="popup" style="background:rgba(2,8,4,.8)"><div class="box">${esc(st.toast)}</div></div>`;
+}
+function render(){
+  const scr=$("#screen");
+  scr.style.filter=`brightness(${S.brightness/100})`;
+  scr.classList.toggle("off",st.locked);
+  if(st.locked){ return; }
+  let h="";
+  switch(st.screen){
+    case "boot": h=drawBoot(); break;
+    case "menu": h=drawMenu(); break;
+    case "chatlist": h=drawChatList(); break;
+    case "chat": h=drawChat(); break;
+    case "contacts": h=drawContacts(); break;
+    case "contact": h=drawContact(); break;
+    case "network": h=drawNetwork(); break;
+    case "repeater": h=drawRepeater(); break;
+    case "settings": h=drawSettings(); break;
+    case "setname": h=drawSetName(); break;
+    case "about": h=drawAbout(); break;
+    case "charging": h=drawCharging(); break;
+  }
+  if(st.kbdOpen && st.screen==="chat") h+=drawKbd();
+  h+=drawPopup()+drawToast();
+  $("#px").innerHTML=h;
+}
+/* ================= ЛОГИКА ================= */
+function toast(s,ms=1200){ st.toast=s; st.toastUntil=Date.now()+ms; render(); }
+function openChat(peer){ st.chatPeer=peer; st.screen="chat"; st.chatScroll=0; st.kbdOpen=false; st.kbd.buf=""; delete unread[peer]; render(); }
+function currentKbKey(){ return KB_ROWS[st.kbd.r][st.kbd.c]; }
+function kbMove(dr,dc){
+  st.kbd.r=(st.kbd.r+dr+KB_ROWS.length)%KB_ROWS.length;
+  const len=KB_ROWS[st.kbd.r].length;
+  st.kbd.c=(st.kbd.c+dc+len)%len;
+}
+function kbPress(){
+  const k=currentKbKey();
+  if(k==="SPACE") st.kbd.buf+=" ";
+  else if(k==="BKSP") st.kbd.buf=st.kbd.buf.slice(0,-1);
+  else if(k==="SEND") sendCurrent();
+  else if(st.kbd.buf.length<230) st.kbd.buf+=k;
+}
+function sendCurrent(){
+  const text=st.kbd.buf.trim();
+  if(!text){ sndError(); return; }
+  const peer = st.screen==="setname" ? null : st.chatPeer;
+  if(st.screen==="setname"){
+    ME.name=text.slice(0,36); st.kbd.buf=""; st.screen="settings"; sndSent(); toast(t("saved")); return;
+  }
+  msgs.push({peer, out:true, text, t:Date.now()});
+  st.kbd.buf=""; st.kbdOpen=false; st.chatScroll=0;
+  toast(t("sending")); sndSent(); render();
+  // имитация ответа узла
+  if(peer!=="broadcast"){
+    const replies=["Ок, понял!","Слышу тебя отлично, через ретранслятор.","👍","Я на месте, сеть держится.","Принято! Связь по LoRa работает без телефона :)"];
+    setTimeout(()=>{ incoming(peer, replies[Math.floor(Math.random()*replies.length)]); }, 1800+Math.random()*2200);
+  }
+}
+function incoming(peer,text){
+  msgs.push({peer, out:false, text, t:Date.now()});
+  if(st.screen==="chat"&&st.chatPeer===peer){ render(); sndMsg(); return; }
+  unread[peer]=(unread[peer]||0)+1;
+  st.popup={type:"msg", name:peerName(peer), text, peer};
+  sndMsg(); render();
+}
+/* ================= ВВОД ================= */
+function input(ev){
+  st.lastInput=Date.now();
+  if(st.locked){ st.locked=false; render(); return; }
+  if(st.popup){ // попап: OK открывает, назад закрывает
+    if(ev==="ok"){ const p=st.popup; st.popup=null; if(p.type==="msg") openChat(p.peer); else render(); }
+    else if(ev==="back"){ st.popup=null; render(); }
+    sndClick(); return;
+  }
+  sndClick();
+  const kbdActive=(st.screen==="chat"&&st.kbdOpen)||st.screen==="setname";
+  if(kbdActive){
+    if(ev==="up")kbMove(-1,0); else if(ev==="down")kbMove(1,0);
+    else if(ev==="left")kbMove(0,-1); else if(ev==="right")kbMove(0,1);
+    else if(ev==="ok")kbPress();
+    else if(ev==="back"||ev==="chat"){ if(st.screen==="chat"){st.kbdOpen=false;} else {st.screen="settings";} }
+    render(); return;
+  }
+  switch(st.screen){
+    case "menu":
+      if(ev==="up") st.menuIdx=(st.menuIdx+t("menu").length-1)%t("menu").length;
+      else if(ev==="down") st.menuIdx=(st.menuIdx+1)%t("menu").length;
+      else if(ev==="ok"){
+        st.listIdx=0;
+        st.screen=["chatlist","contacts","network","settings","about"][st.menuIdx];
+      } else if(ev==="chat"){ st.screen="chatlist"; st.listIdx=0; }
+      break;
+    case "chatlist": {
+      const list=convos();
+      if(ev==="up") st.listIdx=(st.listIdx+list.length-1)%list.length;
+      else if(ev==="down") st.listIdx=(st.listIdx+1)%list.length;
+      else if(ev==="ok") openChat(list[st.listIdx].peer);
+      else if(ev==="back"||ev==="chat") st.screen="menu";
+      break;
+    }
+    case "chat": {
+      const log=msgs.filter(m=>m.peer===st.chatPeer);
+      if(ev==="up") st.chatScroll=Math.min(Math.max(0,log.length-1),st.chatScroll+1);
+      else if(ev==="down") st.chatScroll=Math.max(0,st.chatScroll-1);
+      else if(ev==="chat"||ev==="ok") st.kbdOpen=true;
+      else if(ev==="back"){ st.screen="chatlist"; }
+      break;
+    }
+    case "contacts":
+      if(ev==="up") st.listIdx=(st.listIdx+nodes.length-1)%nodes.length;
+      else if(ev==="down") st.listIdx=(st.listIdx+1)%nodes.length;
+      else if(ev==="ok") st.screen="contact";
+      else if(ev==="back"||ev==="chat") st.screen="menu";
+      break;
+    case "contact": if(ev==="back"||ev==="ok") st.screen="contacts"; break;
+    case "network":
+      if(ev==="ok"&&nodes.some(n=>n.role==="router")) st.screen="repeater";
+      else if(ev==="back"||ev==="chat") st.screen="menu";
+      break;
+    case "repeater": if(ev==="back"||ev==="ok") st.screen="network"; break;
+    case "settings": {
+      const n=settingsItems().length;
+      if(ev==="up") st.listIdx=(st.listIdx+n-1)%n;
+      else if(ev==="down") st.listIdx=(st.listIdx+1)%n;
+      else if(ev==="ok"){
+        if(st.listIdx===0){ st.screen="setname"; st.kbd={r:0,c:0,buf:ME.name}; }
+        else if(st.listIdx===1) S.channel=(S.channel+1)%channels.length;
+        else if(st.listIdx===2) S.regionIdx=(S.regionIdx+1)%regions.length;
+        else if(st.listIdx===3){ S.sound=!S.sound; if(!S.sound)sndClick(); }
+        else if(st.listIdx===4) S.lang=S.lang==="ru"?"en":"ru";
+        else if(st.listIdx===5) S.brightness=S.brightness>=100?30:S.brightness+10;
+        else if(st.listIdx===6) S.autolock=autolockOpts[(autolockOpts.indexOf(S.autolock)+1)%autolockOpts.length];
+        else if(st.listIdx===7) st.screen="about";
+      }
+      else if(ev==="left"&&st.listIdx===5) S.brightness=Math.max(30,S.brightness-10);
+      else if(ev==="right"&&st.listIdx===5) S.brightness=Math.min(100,S.brightness+10);
+      else if(ev==="back"||ev==="chat") st.screen="menu";
+      break;
+    }
+    case "about": if(ev==="back"||ev==="ok"||ev==="chat") st.screen="menu"; break;
+    case "charging": break; // выход по отключению зарядки
+  }
+  render();
+}
+/* физические кнопки мышью */
+document.querySelectorAll(".hbtn").forEach(b=>{
+  let timer=null, long=false;
+  const press=e=>{e.preventDefault();long=false;timer=setTimeout(()=>{long=true;input("back");},600);};
+  const release=()=>{clearTimeout(timer); if(!long) input(b.dataset.k);};
+  b.addEventListener("mousedown",press); b.addEventListener("mouseup",release); b.addEventListener("mouseleave",()=>clearTimeout(timer));
+  b.addEventListener("touchstart",press,{passive:false}); b.addEventListener("touchend",release);
+});
+/* клавиатура ПК */
+document.addEventListener("keydown",e=>{
+  const map={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right",Enter:"ok",Escape:"back",c:"chat",C:"chat",Tab:"chat"};
+  const kbdActive=(st.screen==="chat"&&st.kbdOpen)||st.screen==="setname";
+  if(kbdActive && e.key.length===1 && !map[e.key] && /[а-яА-ЯёЁa-zA-Z0-9 ,.!?-]/.test(e.key)){
+    if(st.kbd.buf.length<230) st.kbd.buf+=e.key.toUpperCase(); render(); e.preventDefault(); return;
+  }
+  if(kbdActive && e.key==="Backspace"){ st.kbd.buf=st.kbd.buf.slice(0,-1); render(); e.preventDefault(); return; }
+  if(map[e.key]){ input(map[e.key]); e.preventDefault(); }
+});
+/* ================= ТАЙМЕРЫ / СИМУЛЯЦИЯ ================= */
+setInterval(()=>{ // heartbeat: дрейф сети, heard-счётчики
+  nodes.forEach(n=>{ n.heard+=1; n.rssi=Math.max(-110,Math.min(-60,n.rssi+(Math.random()*2-1)|0)); n.snr=Math.max(-5,Math.min(12,n.snr+(Math.random()*.6-.3))); });
+  if(!st.locked&&st.screen!=="boot") render();
+},1000);
+setInterval(()=>{ // медленный разряд
+  if(!charging&&battery>0&&Math.random()<.5) battery--;
+  if(charging&&battery<100) battery++;
+  if(battery===10&&!st.popup){ st.popup={type:"lowbat"}; sndError(); }
+  render();
+},45000);
+setInterval(()=>{ // автоблокировка
+  if(S.autolock>0&&!st.locked&&Date.now()-st.lastInput>S.autolock*1000){ st.locked=true; render(); }
+},1000);
+setInterval(()=>{ // случайное входящее сообщение из mesh
+  if(Math.random()<.55&&st.screen!=="boot"){
+    const pool=["Как слышно? Проверка связи.","Я дошёл до точки, всё ок.","Сеть видит "+nodes.length+" узла.","Вечером выйду на ретранслятор."];
+    incoming(Math.random()<.5?"!a1b2c3d4":"broadcast", pool[Math.floor(Math.random()*pool.length)]);
+  }
+},70000);
+/* демо-кнопки */
+$("#demoMsg").onclick=()=>incoming("!a1b2c3d4","Привет! Ты где?");
+$("#demoCharge").onclick=()=>{ charging=!charging; st.screen=charging?"charging":"menu"; render(); };
+$("#demoDrain").onclick=()=>{ battery=10; st.popup={type:"lowbat"}; sndError(); render(); };
+$("#demoNode").onclick=()=>{
+  const i=nodes.indexOf(extraNode);
+  if(i>=0) nodes.splice(i,1); else { extraNode.heard=1; nodes.push(extraNode); }
+  render();
+};
+/* ================= ЗАГРУЗКА ================= */
+function boot(){
+  render();
+  const iv=setInterval(()=>{
+    st.bootStep++;
+    if(st.bootStep>=t("bootSteps").length){ clearInterval(iv); st.screen="menu"; sndBoot(); }
+    render();
+  },650);
+}
+boot();
+</script>
+</body>
+</html>
