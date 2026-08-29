@@ -139,6 +139,12 @@ class StandaloneUI
     int onTextMessage(const meshtastic_MeshPacket *mp);
     std::string nodeName(uint32_t nodeNum) const;
     int countRouters() const;
+    // Bound-checked node access. The radio thread can evict nodes (numMeshNodes--)
+    // between the UI reading the count and dereferencing an index, and
+    // getMeshNodeByIndex() asserts on x >= numMeshNodes -> abort -> reboot.
+    // Never index the node table directly from the UI.
+    meshtastic_NodeInfoLite *nodeByIndex(size_t index) const;
+    size_t nodeCount() const;
     void playUiBeep();
 
     static const char *const MAIN_MENU_ITEMS[];

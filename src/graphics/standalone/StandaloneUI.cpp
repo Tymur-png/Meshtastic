@@ -87,12 +87,29 @@ std::string StandaloneUI::nodeName(uint32_t nodeNum) const
     return std::string(id);
 }
 
+size_t StandaloneUI::nodeCount() const
+{
+    return nodeDB ? nodeDB->getNumMeshNodes() : 0;
+}
+
+meshtastic_NodeInfoLite *StandaloneUI::nodeByIndex(size_t index) const
+{
+    if (!nodeDB)
+        return nullptr;
+    // The radio thread can evict nodes concurrently, shrinking numMeshNodes.
+    // Snapshot the live count and re-check just before dereferencing so a
+    // stale loop index cannot trip the assert inside getMeshNodeByIndex().
+    if (index >= nodeDB->getNumMeshNodes())
+        return nullptr;
+    return nodeDB->getMeshNodeByIndex(index);
+}
+
 int StandaloneUI::countRouters() const
 {
     int count = 0;
-    size_t n = nodeDB->getNumMeshNodes();
+    const size_t n = nodeCount();
     for (size_t i = 0; i < n; i++) {
-        meshtastic_NodeInfoLite *node = nodeDB->getMeshNodeByIndex(i);
+        meshtastic_NodeInfoLite *node = nodeByIndex(i);
         if (node && (node->role == meshtastic_Config_DeviceConfig_Role_ROUTER ||
                      node->role == meshtastic_Config_DeviceConfig_Role_REPEATER ||
                      node->role == meshtastic_Config_DeviceConfig_Role_ROUTER_CLIENT ||
@@ -194,8 +211,14 @@ bool StandaloneUI::handleInput(const InputEvent *event)
         return true;
     }
 
-    // Keyboard owns all input while visible
+    // Keyboard owns all input while visible; long-press LEFT (BACK) exits it
     if (keyboardVisible) {
+        if (e == INPUT_BROKER_BACK) {
+            keyboardVisible = false;
+            editingDeviceName = false;
+            goBack();
+            return true;
+        }
         if (keyboard.handleInput(e)) {
             playUiBeep();
             requestRedraw();
@@ -329,6 +352,7 @@ void StandaloneUI::onChatInput(input_broker_event e)
         break;
     case INPUT_BROKER_SELECT:
         // OK opens the keyboard to type a reply
+        keyboard.reset();
         keyboardVisible = true;
         break;
     case INPUT_BROKER_LEFT:
@@ -343,7 +367,9 @@ void StandaloneUI::onChatInput(input_broker_event e)
 
 void StandaloneUI::onContactsInput(input_broker_event e)
 {
-    const int nodeCount = (int)nodeDB->getNumMeshNodes();
+    const int nodeTotal = (int)nodeCount();
+    if (contactIndex >= nodeTotal)
+        contactIndex = nodeTotal > 0 ? nodeTotal - 1 : 0;
     if (currentScreen == Screen::CONTACT_DETAIL) {
         if (e == INPUT_BROKER_SELECT || e == INPUT_BROKER_LEFT || e == INPUT_BROKER_BACK)
             goBack();
@@ -356,11 +382,11 @@ void StandaloneUI::onContactsInput(input_broker_event e)
             contactIndex--;
         break;
     case INPUT_BROKER_DOWN:
-        if (contactIndex < nodeCount - 1)
+        if (nodeTotal > 0 && contactIndex < nodeTotal - 1)
             contactIndex++;
         break;
     case INPUT_BROKER_SELECT:
-        if (nodeCount > 0)
+        if (nodeTotal > 0)
             currentScreen = Screen::CONTACT_DETAIL;
         break;
     case INPUT_BROKER_LEFT:
@@ -597,7 +623,7 @@ void StandaloneUI::drawStatusBar(OLEDDisplay *display)
 
     display->setTextAlignment(TEXT_ALIGN_RIGHT);
     char net[24];
-    snprintf(net, sizeof(net), "Узлов: %u", (unsigned)nodeDB->getNumMeshNodes());
+    snprintf(net, sizeof(net), "Узлов: %u", (unsigned)nodeCount());
     display->drawString(display->width() - 2, y, net);
 }
 
@@ -729,12 +755,15 @@ void StandaloneUI::drawChat(OLEDDisplay *display)
             continue;
         lines.push_back(nodeName(m.sender) + ":");
         std::string text = MessageStore::getText(m);
-        // crude wrap by display width
+        // Wrap by display width; guard against non-shrinking loops when a
+        // single "word" is wider than the screen (getStringWidth never shrinks).
         std::string rest = text;
         while (!rest.empty()) {
             size_t fit = rest.size();
             while (fit > 1 && display->getStringWidth(rest.substr(0, fit).c_str()) > w - 12)
                 fit--;
+            if (fit == 0)
+                fit = 1; // one glyph per line, always progress
             lines.push_back(rest.substr(0, fit));
             rest.erase(0, fit);
         }
@@ -769,9 +798,11 @@ void StandaloneUI::drawContacts(OLEDDisplay *display)
     const int16_t lineH = FONT_HEIGHT_SMALL + 4;
     const int16_t top = FONT_HEIGHT_SMALL + 8;
     const int maxLines = (display->height() - top - FONT_HEIGHT_SMALL - 6) / lineH;
-    const int nodeCount = (int)nodeDB->getNumMeshNodes();
+    const int nodeTotal = (int)nodeCount();
+    if (contactIndex >= nodeTotal)
+        contactIndex = nodeTotal > 0 ? nodeTotal - 1 : 0;
 
-    if (nodeCount == 0) {
+    if (nodeTotal == 0) {
         display->setTextAlignment(TEXT_ALIGN_CENTER);
         display->drawString(display->width() / 2, display->height() / 2, "Сеть пуста");
         return;
@@ -782,8 +813,8 @@ void StandaloneUI::drawContacts(OLEDDisplay *display)
         first = contactIndex - maxLines + 1;
 
     int16_t y = top;
-    for (int i = first; i < nodeCount && y + lineH <= display->height() - FONT_HEIGHT_SMALL - 4; i++, y += lineH) {
-        meshtastic_NodeInfoLite *node = nodeDB->getMeshNodeByIndex(i);
+    for (int i = first; i < nodeTotal && y + lineH <= display->height() - FONT_HEIGHT_SMALL - 4; i++, y += lineH) {
+        meshtastic_NodeInfoLite *node = nodeByIndex(i);
         if (!node)
             continue;
         std::string name = nodeName(node->num);
@@ -803,7 +834,7 @@ void StandaloneUI::drawContacts(OLEDDisplay *display)
 
 void StandaloneUI::drawContactDetail(OLEDDisplay *display)
 {
-    meshtastic_NodeInfoLite *node = nodeDB->getMeshNodeByIndex(contactIndex);
+    meshtastic_NodeInfoLite *node = nodeByIndex(contactIndex);
     drawFrameBox(display, "КОНТАКТ");
     if (!node)
         return;
@@ -846,7 +877,7 @@ void StandaloneUI::drawNetwork(OLEDDisplay *display)
     const int16_t lineH = FONT_HEIGHT_SMALL + 4;
     char buf[64];
 
-    snprintf(buf, sizeof(buf), "Узлов: %u", (unsigned)nodeDB->getNumMeshNodes());
+    snprintf(buf, sizeof(buf), "Узлов: %u", (unsigned)nodeCount());
     display->drawString(6, y, buf);
     y += lineH;
     snprintf(buf, sizeof(buf), "Ретрансляторов: %d", countRouters());
@@ -883,9 +914,9 @@ void StandaloneUI::drawRepeater(OLEDDisplay *display)
     char buf[64];
 
     // Show the first router/repeater-class node we know about
-    size_t n = nodeDB->getNumMeshNodes();
+    const size_t n = nodeCount();
     for (size_t i = 0; i < n; i++) {
-        meshtastic_NodeInfoLite *node = nodeDB->getMeshNodeByIndex(i);
+        meshtastic_NodeInfoLite *node = nodeByIndex(i);
         if (!node || (node->role != meshtastic_Config_DeviceConfig_Role_ROUTER &&
                       node->role != meshtastic_Config_DeviceConfig_Role_REPEATER &&
                       node->role != meshtastic_Config_DeviceConfig_Role_ROUTER_CLIENT &&
