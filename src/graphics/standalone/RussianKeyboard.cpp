@@ -13,6 +13,14 @@ const char *const RussianKeyboard::LETTERS[LETTER_ROWS][LETTER_COLS] = {
     {"Ц", "Ч", "Ш", "Щ", "Ъ", "Ы", "Ь", "Э", "Ю", "Я"},
 };
 
+// Upper bound on the editable text, in UTF-8 bytes. Messages are sent in a fixed
+// 233-byte protocol payload, so don't let the user type past it: extra characters
+// would be silently dropped at send-time, which reads as a lost keys bug.
+namespace
+{
+constexpr size_t kMaxInputBytes = 233;
+}
+
 void RussianKeyboard::reset()
 {
     inputText.clear();
@@ -65,8 +73,14 @@ bool RussianKeyboard::handleInput(input_broker_event event)
 
 void RussianKeyboard::pressCurrentKey()
 {
+    if (inputText.size() >= kMaxInputBytes)
+        return; // at the message length limit: ignore further typing
+
     if (cursorRow < LETTER_ROWS) {
-        inputText += LETTERS[cursorRow][cursorCol];
+        const char *ch = LETTERS[cursorRow][cursorCol];
+        if (inputText.size() + strlen(ch) > kMaxInputBytes)
+            return; // this Cyrillic char (2 bytes) would exceed the cap
+        inputText += ch;
         return;
     }
     switch (cursorCol) {

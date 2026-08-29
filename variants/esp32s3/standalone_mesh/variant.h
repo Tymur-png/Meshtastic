@@ -99,6 +99,18 @@
 // #define EXT_CHRG_DETECT 46
 // #define EXT_CHRG_DETECT_MODE INPUT_PULLUP
 
+// --------------------------- Backlight (brightness) -------------------------
+// The 8080 LCD shield powers its backlight straight from VCC, so the "Яркость
+// экрана" setting cannot dim the screen until you wire the TFT LED to a spare
+// GPIO through a small NPN/2N2222 (base via 1k to the GPIO, collector to the
+// LED-, emitter to GND) or a logic-level MOSFET. When you do, set that GPIO as
+// PIN_PWM_BACKLIGHT below and the setting drives it with PWM (0..255).
+//
+// The only free, boot-safe GPIO on this build is GPIO46 (the optional TP4056
+// CHRG line, currently unassigned). If your backlight happens to be wired to a
+// different pin, change the value here.
+#define PIN_PWM_BACKLIGHT 46
+
 // --------------------------------- Misc -------------------------------------
 #define HAS_GPS 0
 

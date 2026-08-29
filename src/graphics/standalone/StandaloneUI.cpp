@@ -112,6 +112,12 @@ void StandaloneUI::playUiBeep()
 
 void StandaloneUI::sendChatMessage(const std::string &text)
 {
+    // decoded.payload.bytes is a fixed 233-byte array (meshtastic_Data_payload_t);
+    // Cyrillic is 2 bytes/char in UTF-8. Copying past it clobbers pool-allocated
+    // mesh packets and panics the device, so clamp to the buffer size first.
+    const size_t maxLen = sizeof(((meshtastic_MeshPacket *)nullptr)->decoded.payload.bytes);
+    const size_t len = text.size() < maxLen ? text.size() : maxLen;
+
     meshtastic_MeshPacket *p = router->allocForSending();
     if (!p) {
         playLongBeep(); // error signal
@@ -121,8 +127,8 @@ void StandaloneUI::sendChatMessage(const std::string &text)
     p->to = NODENUM_BROADCAST;
     p->channel = 0;
     p->want_ack = true;
-    p->decoded.payload.size = strlen(text.c_str());
-    memcpy(p->decoded.payload.bytes, text.c_str(), p->decoded.payload.size);
+    p->decoded.payload.size = len;
+    memcpy(p->decoded.payload.bytes, text.c_str(), len);
 
     // Keep our own message in the local history so it survives a reboot
     messageStore.tryAddFromPacket(*p);
@@ -423,6 +429,13 @@ void StandaloneUI::onSettingsInput(input_broker_event e)
             case 6: // Яркость экрана
                 editBrightness = uiconfig.screen_brightness;
                 currentScreen = Screen::SETTING_BRIGHTNESS;
+#if HAS_PWM_BACKLIGHT
+                // An unset (0) stored brightness means "still default"; start the
+                // preview from the real default so the bar isn't empty on first use.
+                if (editBrightness == 0)
+                    editBrightness = PWM_BACKLIGHT_DEFAULT;
+                backlightSet(editBrightness); // live preview
+#endif
                 break;
             case 8: // Информация
                 currentScreen = Screen::ABOUT;
