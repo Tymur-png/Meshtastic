@@ -70,6 +70,14 @@ CannedMessageModule::CannedMessageModule()
     : SinglePortModule("canned", meshtastic_PortNum_TEXT_MESSAGE_APP), concurrency::OSThread("CannedMessage")
 {
     this->loadProtoForModule();
+#ifdef STANDALONE_UI
+    // Phone-free UI owns every button. A ghost I2C "keyboard" must not steal
+    // Settings presses into the canned-message selector (OOB index -> reboot).
+    LOG_INFO("CannedMessage: disabled (standalone UI)");
+    this->updateState(CANNED_MESSAGE_RUN_STATE_DISABLED);
+    disable();
+    return;
+#endif
     if ((this->splitConfiguredMessages() <= 0) && (cardkb_found.address == 0x00) && !INPUTBROKER_MATRIX_TYPE) {
         LOG_INFO("CannedMessage: none configured, disabled");
         this->updateState(CANNED_MESSAGE_RUN_STATE_DISABLED);
@@ -394,6 +402,9 @@ static void drawWrappedEmoteText(OLEDDisplay *display, int x, int y, const char 
  */
 int CannedMessageModule::handleInputEvent(const InputEvent *event)
 {
+#ifdef STANDALONE_UI
+    return 0;
+#endif
     // Block ALL input if an alert banner is active
     if (screen && screen->isOverlayBannerShowing()) {
         return 0;

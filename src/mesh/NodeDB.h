@@ -428,6 +428,14 @@ class NodeDB
         return &meshNodes->at(x);
     }
 
+    // UI-safe: never assert if the radio thread just evicted a node.
+    meshtastic_NodeInfoLite *getMeshNodeByIndexSafe(size_t x)
+    {
+        if (!meshNodes || x >= numMeshNodes)
+            return nullptr;
+        return &meshNodes->at(x);
+    }
+
     virtual meshtastic_NodeInfoLite *getMeshNode(NodeNum n);
     size_t getNumMeshNodes() { return numMeshNodes; }
     /// Find a node in our DB, create an empty NodeInfoLite if missing (evicting

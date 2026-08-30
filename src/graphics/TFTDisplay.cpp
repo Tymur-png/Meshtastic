@@ -711,6 +711,74 @@ class LGFX : public lgfx::LGFX_Device
 
 static LGFX *tft = nullptr;
 
+#elif defined(ST7789_PARALLEL)
+// 8-bit parallel (8080) ST7789 panel — typical 2.4" TFT LCD shield with the
+//  LCD_RS / LCD_WR / LCD_RD / LCD_CS / LCD_RST control markings.
+// LCD_RD can be tied to 3V3 (write-only) when ST7789_RD is -1.
+#include <LovyanGFX.hpp>
+
+class LGFX : public lgfx::LGFX_Device
+{
+    lgfx::Panel_ST7789 _panel_instance;
+    lgfx::Bus_Parallel8 _bus_instance;
+#ifdef TFT_BL
+    lgfx::Light_PWM _light_instance;
+#endif
+
+  public:
+    LGFX(void)
+    {
+        {
+            auto cfg = _bus_instance.config();
+
+            cfg.pin_wr = ST7789_WR;       // Write strobe
+            cfg.pin_rd = ST7789_RD;       // Read strobe (-1 disables reads)
+            cfg.pin_rs = ST7789_DC;       // LCD_RS: low = command, high = data
+            cfg.pin_d0 = ST7789_D0;       // Data bus
+            cfg.pin_d1 = ST7789_D1;
+            cfg.pin_d2 = ST7789_D2;
+            cfg.pin_d3 = ST7789_D3;
+            cfg.pin_d4 = ST7789_D4;
+            cfg.pin_d5 = ST7789_D5;
+            cfg.pin_d6 = ST7789_D6;
+            cfg.pin_d7 = ST7789_D7;
+            cfg.freq_write = 20000000;    // keep modest for wire-harness level shifters
+            _bus_instance.config(cfg);
+
+            _panel_instance.setBus(&_bus_instance);
+        }
+
+        auto pcfg = _panel_instance.config();
+        pcfg.pin_cs = ST7789_CS_PIN;
+        pcfg.pin_rst = ST7789_RST;
+        pcfg.panel_width = TFT_WIDTH;
+        pcfg.panel_height = TFT_HEIGHT;
+        pcfg.memory_width = TFT_WIDTH;
+        pcfg.memory_height = TFT_HEIGHT;
+        pcfg.offset_x = TFT_OFFSET_X;
+        pcfg.offset_y = TFT_OFFSET_Y;
+        pcfg.offset_rotation = TFT_OFFSET_ROTATION;
+        pcfg.readable = (ST7789_RD >= 0);
+        pcfg.invert = true;
+        pcfg.rgb_order = false;
+        pcfg.dlen_16bit = false;
+        pcfg.bus_shared = false;
+        _panel_instance.config(pcfg);
+
+#ifdef TFT_BL
+        auto lcfg = _light_instance.config();
+        lcfg.pin_bl = TFT_BL;
+        lcfg.invert = false;
+        _light_instance.config(lcfg);
+        _panel_instance.setLight(&_light_instance);
+#endif
+
+        setPanel(&_panel_instance);
+    }
+};
+
+static LGFX *tft = nullptr;
+
 #elif defined(ST7796_CS)
 #include <LovyanGFX.hpp> // Graphics and font library for ST7796 driver chip
 

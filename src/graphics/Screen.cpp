@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "PowerMon.h"
 #include "Throttle.h"
 #include "configuration.h"
+#include "graphics/standalone/StandaloneUI.h"
 #include "meshUtils.h"
 #if HAS_SCREEN
 #include "EInkParallelDisplay.h"
@@ -1114,6 +1115,19 @@ int32_t Screen::runOnce()
 
     menuHandler::handleMenuSwitch(dispdev);
 
+#ifdef STANDALONE_UI
+    // Standalone UI housekeeping: battery warnings, charging state, popups.
+    // Do not paint here — runOnce already calls updateUiFrame() below. An extra
+    // full TFT blit while holding spiLock starves the LoRa radio and the board
+    // reboots (TX watchdog / brownout), which showed up as "any settings press
+    // restarts the device".
+    if (graphics::standaloneUI) {
+        graphics::standaloneUI->tick();
+        if (graphics::standaloneUI->consumeRedrawRequest())
+            setFastFramerate();
+    }
+#endif
+
     // Show boot screen for first logo_timeout seconds, then switch to normal operation.
     // serialSinceMsec adjusts for additional serial wait time during nRF52 bootup
     static bool showingBootScreen = true;
@@ -1376,6 +1390,19 @@ void Screen::setFrames(FrameFocus focus)
     if (NotificationRenderer::current_notification_type == notificationTypeEnum::text_input) {
         return;
     }
+
+#ifdef STANDALONE_UI
+    // Standalone (phone-free) UI replaces the whole frameset with a single
+    // full-screen frame driven by graphics::StandaloneUI.
+    if (!graphics::standaloneUI)
+        graphics::standaloneUI = new graphics::StandaloneUI();
+    static FrameCallback standaloneFrames[] = {graphics::StandaloneUI::drawFrame};
+    ui->setFrames(standaloneFrames, 1);
+    ui->disableAllIndicators();
+    framesetInfo.frameCount = 1;
+    framesetInfo.positions.home = 0;
+    return;
+#endif
 
     uint8_t originalPosition = ui->getUiState()->currentFrame;
     uint8_t previousFrameCount = framesetInfo.frameCount;
@@ -2119,6 +2146,17 @@ int Screen::handleInputEvent(const InputEvent *event)
     LOG_INPUT("Screen Input event %u! kb %u", event->inputEvent, event->kbchar);
     if (!screenOn)
         return 0;
+
+#ifdef STANDALONE_UI
+    // Standalone UI owns all input. Return non-zero so later observers
+    // (CannedMessage, stock menus, games) do not also handle the same press —
+    // that path called forceDisplay/saveToDisk on the button thread and rebooted.
+    // Paint on the next runOnce; a full TFT blit from this callback starves LoRa.
+    if (graphics::standaloneUI && graphics::standaloneUI->handleInput(event)) {
+        setFastFramerate();
+        return 1;
+    }
+#endif
 
     // Handle text input notifications specially - pass input to virtual keyboard
     if (NotificationRenderer::current_notification_type == notificationTypeEnum::text_input) {

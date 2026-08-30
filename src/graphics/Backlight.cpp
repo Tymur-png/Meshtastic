@@ -38,7 +38,10 @@ uint8_t backlightGet()
 
 void backlightOn()
 {
-    drive(uiconfig.screen_brightness);
+    // A stored brightness of 0 means "never set yet" (the settings screen drops
+    // the value straight into uiconfig), so apply the sane default on wake
+    // rather than leaving the panel black on the very first boot.
+    drive(uiconfig.screen_brightness ? uiconfig.screen_brightness : PWM_BACKLIGHT_DEFAULT);
 }
 
 void backlightOff()
